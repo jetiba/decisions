@@ -1,0 +1,1 @@
+"""Agent action guard benchmark."""

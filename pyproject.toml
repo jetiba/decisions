@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "azure-identity",
+    "fastapi>=0.142.2",
+    "openai>=3.24.0",
     "python-dotenv",
     "requests",
+    "uvicorn>=0.54.0",
 ]
 
 [tool.uv]

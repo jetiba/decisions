@@ -9,6 +9,9 @@ __pycache__/
 build/
 dist/
 
+guard/results/
+.playwright-mcp/
+
 # Secrets / local config
 .env
 .env.*
@@ -17,3 +20,5 @@ dist/
 # OS / editor
 .DS_Store
 .idea/
+
+record_gif.py

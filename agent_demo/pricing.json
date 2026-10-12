@@ -1,0 +1,8 @@
+{
+  "_note": "USD per 1M tokens. null = not set; the UI then shows tokens only for that model. Check current prices before using these numbers.",
+  "per_1m_tokens": {
+    "Decision-1": {"input": 0.042, "output": 0},
+    "gpt-6.1-sol": {"input": 2, "output": 10},
+    "gpt-6-luna": {"input": 0.12, "output": 0.6}
+  }
+}

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent loop: LLM vs Decision-1</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --ink: #1c2330; --muted: #667085; --line: #e3e6ec;
+    --llm: #7a4de8; --dec: #0a7d6e; --warn: #c2410c; --warn-bg: #fff4ec;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 18px 28px 6px; }
+  h1 { margin: 0 0 2px; font-size: 20px; }
+  header p { margin: 0; color: var(--muted); }
+  .controls { display: flex; gap: 10px; padding: 12px 28px; align-items: stretch; flex-wrap: wrap; }
+  select, textarea, button { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); color: var(--ink); }
+  textarea { flex: 1; min-width: 320px; resize: vertical; min-height: 40px; }
+  button { background: var(--ink); color: #fff; border-color: var(--ink); cursor: pointer; padding: 8px 22px; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .summary { margin: 0 28px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .summary table { width: 100%; border-collapse: collapse; }
+  .summary th, .summary td { padding: 7px 14px; text-align: right; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .summary th:first-child, .summary td:first-child { text-align: left; color: var(--muted); }
+  .summary thead th { border-top: 0; font-weight: 600; }
+  .summary .llm { color: var(--llm); } .summary .dec { color: var(--dec); }
+  .summary .sub { font-size: 11px; color: #98a2b3; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 28px 40px; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
+  .col h2 { margin: 0 0 8px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
+  .col.llm h2 { color: var(--llm); } .col.decision h2 { color: var(--dec); }
+  .col h2 small { color: var(--muted); font-weight: 400; }
+  .status { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .llm .card { border-left-color: var(--llm); } .decision .card { border-left-color: var(--dec); }
+  .card.diverged { background: var(--warn-bg); outline: 1px solid #f3c9a8; }
+  .card.thinking { color: var(--muted); font-style: italic; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .step-n { color: var(--muted); font-size: 12px; }
+  .tool { font-weight: 600; font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
+  .chip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: #eef0f4; color: #3b4456; font-variant-numeric: tabular-nums; }
+  .diverge-tag { font-size: 11.5px; color: var(--warn); font-weight: 600; }
+  .bar { height: 5px; background: #eef0f4; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: var(--dec); }
+  pre { margin: 6px 0 0; padding: 6px 8px; background: #f7f8fa; border-radius: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+  .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 6px; }
+  .error { color: #b42318; }
+  details { margin-top: 6px; }
+  details > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  .probs { margin-top: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .prob { display: grid; grid-template-columns: 110px 1fr 56px; gap: 8px; align-items: center; }
+  .prob.top .name { font-weight: 600; }
+  .prob .track { height: 6px; background: #eef0f4; border-radius: 3px; overflow: hidden; }
+  .prob .track > i { display: block; height: 100%; background: var(--dec); }
+  .prob .val { text-align: right; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent loop: tool choice by LLM vs by Decision-1</h1>
+  <p id="models"></p>
+</header>
+
+<div class="controls">
+  <select id="scenario"></select>
+  <textarea id="task" rows="2"></textarea>
+  <button id="run">Run both</button>
+</div>
+
+<div class="summary">
+  <table>
+    <thead><tr><th></th><th class="llm" id="h-llm">LLM</th><th class="dec" id="h-dec">Decision</th></tr></thead>
+    <tbody id="summary"></tbody>
+  </table>
+</div>
+
+<div class="cols">
+  <section class="col llm"><h2><span id="t-llm">LLM</span><small>chooses tool + args</small><span class="status" id="s-llm"></span></h2><div id="steps-llm"></div></section>
+  <section class="col decision"><h2><span id="t-dec">Decision</span><small>chooses tool, small LLM fills args</small><span class="status" id="s-decision"></span></h2><div id="steps-decision"></div></section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let cfg, source;
+const sides = ["llm", "decision"];
+let state;
+
+const fmtMs = (v) => v == null ? "-" : v >= 1000 ? (v / 1000).toFixed(2) + " s" : Math.round(v) + " ms";
+const fmtCost = (v) => v == null ? "n/a" : "$" + (v < 0.01 ? v.toFixed(5) : v.toFixed(4));
+const fmtTok = (a, b) => `${a} in / ${b} out`;
+
+function fresh() {
+  const t = () => ({ ms: 0, tin: 0, tout: 0, cost: 0, costKnown: true, n: 0 });
+  return { steps: [], tools: [], select: t(), args: t(), all: t(), wall: null, start: null, status: "", error: null };
+}
+
+function addCall(totals, c) {
+  totals.ms += c.ms; totals.tin += c.input_tokens; totals.tout += c.output_tokens; totals.n++;
+  if (c.cost == null) totals.costKnown = false; else totals.cost += c.cost;
+}
+
+function cell(t, key) {
+  if (key === "ms") return fmtMs(t.ms);
+  if (key === "tok") return fmtTok(t.tin, t.tout);
+  return t.costKnown ? fmtCost(t.cost) : "n/a";
+}
+
+function renderSummary() {
+  // [label, metric, totals used for the value, prefix for the arguments-model line under Decision-1]
+  const rows = [
+    ["Tool selection time (sum)", "ms", "select", "+ args"],
+    ["Tool selection tokens", "tok", "select", "+ args"],
+    ["Tool selection cost", "cost", "select", "+ args"],
+    ["Whole loop: model time (sum)", "ms", "all", "of which"],
+    ["Whole loop: tokens", "tok", "all", "of which"],
+    ["Whole loop: cost", "cost", "all", "of which"],
+  ];
+  const argsModel = cfg.models.args;
+  const html = rows.map(([label, key, field, prefix]) => {
+    const d = state.decision;
+    const sub = d.args.n ? `<div class="sub">${prefix} ${argsModel}: ${cell(d.args, key)}</div>` : "";
+    return `<tr><td>${label}</td><td>${cell(state.llm[field], key)}</td><td>${cell(d[field], key)}${sub}</td></tr>`;
+  });
+  const plain = [
+    ["Steps", (s) => String(s.steps.length)],
+    ["Wall clock", (s) => s.wall == null ? "-" : fmtMs(s.wall)],
+  ];
+  plain.forEach(([l, f]) => html.push(`<tr><td>${l}</td><td>${f(state.llm)}</td><td>${f(state.decision)}</td></tr>`));
+  $("summary").innerHTML = html.join("");
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function removeThinking(side) {
+  const t = $("steps-" + side).querySelector(".thinking");
+  if (t) t.remove();
+}
+
+function renderOutput(c) {
+  const d = el("details"); d.open = true;
+  d.append(el("summary", "", `${c.model} · ${c.phase} output`));
+  const out = c.output;
+  if (out && out.probabilities) {
+    const box = el("div", "probs");
+    d.append(el("pre", "", JSON.stringify({ choice: out.choice, confidence: out.confidence }, null, 1)));
+    Object.entries(out.probabilities).sort((a, b) => b[1] - a[1]).forEach(([name, p], i) => {
+      const row = el("div", "prob" + (i === 0 ? " top" : ""));
+      const track = el("div", "track"); const fill = el("i"); fill.style.width = p * 100 + "%"; track.append(fill);
+      row.append(el("span", "name", name), track, el("span", "val", (p * 100).toFixed(2) + "%"));
+      box.append(row);
+    });
+    d.append(box);
+  } else {
+    d.append(el("pre", "", JSON.stringify(out, null, 1)));
+  }
+  return d;
+}
+
+function renderStep(side, ev) {
+  removeThinking(side);
+  const s = state[side];
+  s.steps.push(ev); s.tools.push(ev.tool);
+  ev.calls.forEach((c) => { addCall(s.all, c); addCall(c.phase === "select" ? s.select : s.args, c); });
+
+  const card = el("div", "card");
+  card.dataset.step = ev.step;
+  const head = el("div", "row");
+  head.append(el("span", "step-n", "step " + ev.step), el("span", "tool", ev.tool));
+  ev.calls.forEach((c) => {
+    const label = c.phase === "select" ? "select" : "args";
+    const cost = c.cost == null ? "" : " · " + fmtCost(c.cost);
+    const chip = el("span", "chip", `${label}: ${fmtMs(c.ms)} · ${c.input_tokens}+${c.output_tokens} tok${cost}`);
+    chip.title = c.model;
+    head.append(chip);
+  });
+  card.append(head);
+
+  if (ev.confidence != null) {
+    card.append(el("div", "label", "confidence " + (ev.confidence * 100).toFixed(1) + "%"));
+    const bar = el("div", "bar"); const i = el("i"); i.style.width = ev.confidence * 100 + "%"; bar.append(i); card.append(bar);
+  }
+  ev.calls.forEach((c) => card.append(renderOutput(c)));
+  card.append(el("div", "label", "arguments used"), el("pre", "", JSON.stringify(ev.args, null, 1)));
+  card.append(el("div", "label", "tool result"), el("pre", "", ev.result));
+  $("steps-" + side).append(card);
+  markDivergence();
+  renderSummary();
+}
+
+function markDivergence() {
+  const a = state.llm.tools, b = state.decision.tools;
+  let firstDiff = -1;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) { firstDiff = i; break; }
+  document.querySelectorAll(".card.diverged").forEach((c) => { c.classList.remove("diverged"); c.querySelector(".diverge-tag")?.remove(); });
+  if (firstDiff < 0) return;
+  sides.forEach((side, k) => {
+    const card = $("steps-" + side).querySelector(`.card[data-step="${firstDiff + 1}"]`);
+    if (!card) return;
+    card.classList.add("diverged");
+    card.querySelector(".row").append(el("span", "diverge-tag", "first divergence"));
+  });
+}
+
+function handle(ev) {
+  if (ev.type === "warming") {
+    sides.forEach((k) => $("s-" + k).textContent = "warming up (not measured)");
+    return;
+  }
+  const s = state[ev.side];
+  if (ev.type === "start") {
+    $("s-" + ev.side).textContent = "running";
+  } else if (ev.type === "thinking") {
+    removeThinking(ev.side);
+    $("steps-" + ev.side).append(el("div", "card thinking", `step ${ev.step}: choosing the next tool...`));
+  } else if (ev.type === "step") {
+    renderStep(ev.side, ev);
+  } else if (ev.type === "error") {
+    removeThinking(ev.side);
+    const c = el("div", "card error", "Error: " + ev.message);
+    $("steps-" + ev.side).append(c);
+  } else if (ev.type === "done") {
+    s.wall = ev.wall_ms;
+    $("s-" + ev.side).textContent = ev.status === "finished" ? "finished" : ev.status;
+    renderSummary();
+    if (sides.every((k) => state[k].wall != null)) { source.close(); $("run").disabled = false; }
+  }
+}
+
+function run() {
+  if (source) source.close();
+  state = { llm: fresh(), decision: fresh() };
+  sides.forEach((s) => { $("steps-" + s).innerHTML = ""; $("s-" + s).textContent = "waiting"; });
+  renderSummary();
+  $("run").disabled = true;
+  source = new EventSource("/api/run?task=" + encodeURIComponent($("task").value));
+  source.onmessage = (m) => handle(JSON.parse(m.data));
+  source.onerror = () => { source.close(); $("run").disabled = false; };
+}
+
+async function init() {
+  cfg = await (await fetch("/api/config")).json();
+  const m = cfg.models;
+  $("models").textContent = `${m.llm} (LLM, native tool calling)  vs  ${m.decision} + ${m.args} (arguments only)`;
+  ["t-llm", "h-llm"].forEach((id) => $(id).textContent = m.llm);
+  ["t-dec", "h-dec"].forEach((id) => $(id).textContent = m.decision);
+  const unset = Object.entries(cfg.prices_set).filter(([, v]) => !v).map(([k]) => k);
+  if (unset.length) $("models").textContent += `   |   prices not set for: ${unset.join(", ")} (edit agent_demo/pricing.json)`;
+  cfg.scenarios.forEach((s) => $("scenario").append(new Option(s.title, s.id)));
+  $("scenario").onchange = () => $("task").value = cfg.scenarios.find((s) => s.id === $("scenario").value).task;
+  $("scenario").onchange();
+  $("run").onclick = run;
+  state = { llm: fresh(), decision: fresh() };
+  renderSummary();
+}
+init();
+</script>
+</body>
+</html>

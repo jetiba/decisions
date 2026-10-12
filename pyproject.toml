@@ -1,0 +1,14 @@
+[project]
+name = "decisions"
+version = "0.1.0"
+description = "Samples for Microsoft-Decision-1 in Microsoft Foundry"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "azure-identity",
+    "python-dotenv",
+    "requests",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,10 @@
+{"text": "I was charged twice this month.", "label": "billing"}
+{"text": "Please send me the invoice for March.", "label": "billing"}
+{"text": "I want a refund for my annual plan.", "label": "billing"}
+{"text": "The integration crashes during checkout.", "label": "engineering"}
+{"text": "The API returns 500 on every call.", "label": "engineering"}
+{"text": "Webhooks stopped firing after yesterday's release.", "label": "engineering"}
+{"text": "How do I change my email address?", "label": "support"}
+{"text": "Where can I find the export option?", "label": "support"}
+{"text": "Can I add a second admin to my workspace?", "label": "support"}
+{"text": "I think something is wrong but I'm not sure what.", "label": "support"}

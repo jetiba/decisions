@@ -10,6 +10,8 @@ build/
 dist/
 
 guard/results/
+puzzle_arena/results/
+puzzle_arena/.copilot-home/
 .playwright-mcp/
 
 # Secrets / local config

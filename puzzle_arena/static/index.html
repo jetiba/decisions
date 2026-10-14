@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>100 Squares Arena</title>
+<style>
+  :root { --bg:#161b26; --panel:#1f2635; --cell:#2c3546; --fill:#3d5a80; --cur:#ee6c4d; --ok:#2a9d8f; --bad:#e5484d; --mut:#93a1b5; --txt:#e8ecf1; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); padding:18px 24px 40px; }
+  h1 { margin:0 0 4px; font-size:1.5rem; }
+  .sub { color:var(--mut); font-size:.9rem; margin-bottom:14px; }
+  .bar { display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:var(--panel); padding:10px 14px; border-radius:8px; margin-bottom:16px; }
+  .bar label { color:var(--mut); font-size:.85rem; display:flex; gap:6px; align-items:center; }
+  input, select { background:#2c3546; color:var(--txt); border:1px solid #3a465c; border-radius:5px; padding:5px 8px; width:80px; }
+  select { width:auto; }
+  button { background:var(--fill); color:#fff; border:0; border-radius:6px; padding:8px 18px; font-size:.95rem; cursor:pointer; }
+  button:hover { filter:brightness(1.15); }
+  button.stop { background:var(--bad); }
+  button:disabled { opacity:.4; cursor:default; }
+  #batchinfo { margin-left:auto; color:var(--mut); font-size:.85rem; }
+  .arena { display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
+  @media (max-width: 1000px) { .arena { grid-template-columns: 1fr; } }
+  .panel { background:var(--panel); border-radius:10px; padding:14px; }
+  .phead { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .phead h2 { margin:0; font-size:1.15rem; }
+  .badge { font-size:.75rem; padding:2px 9px; border-radius:99px; background:#3a465c; text-transform:uppercase; letter-spacing:.04em; }
+  .badge.running { background:#b7791f; } .badge.solved { background:var(--ok); }
+  .badge.error, .badge.timeout, .badge.budget, .badge.gave_up { background:var(--bad); }
+  .gameno { margin-left:auto; color:var(--mut); font-size:.9rem; }
+  .board { display:grid; grid-template-columns:repeat(10,1fr); gap:2px; width:100%; max-width:520px; aspect-ratio:1; margin:0 auto; }
+  .cell { background:var(--cell); border-radius:3px; display:flex; align-items:center; justify-content:center; font-size:clamp(9px, 1.3vw, 14px); font-weight:600; }
+  .cell.f { background:var(--fill); }
+  .cell.cur { background:var(--cur); }
+  .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:12px; text-align:center; }
+  .stat b { display:block; font-size:1.25rem; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--mut); font-size:.72rem; text-transform:uppercase; }
+  .msg { color:var(--bad); font-size:.78rem; min-height:1.2em; margin-top:6px; text-align:center; }
+  .progress { height:6px; background:var(--cell); border-radius:4px; margin-top:10px; overflow:hidden; }
+  .progress i { display:block; height:100%; background:var(--ok); width:0; transition:width .15s; }
+  h3 { margin:22px 0 8px; }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; background:var(--panel); border-radius:8px; overflow:hidden; }
+  th, td { padding:7px 10px; text-align:left; border-bottom:1px solid #2c3546; font-variant-numeric:tabular-nums; }
+  th { color:var(--mut); font-weight:600; font-size:.75rem; text-transform:uppercase; }
+  .tb { display:inline-block; height:8px; border-radius:3px; background:var(--fill); vertical-align:middle; margin-left:8px; }
+  .tb.ok { background:var(--ok); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+  .dot.astra { background:#5aa9e6; } .dot.decision { background:#f2a65a; }
+</style>
+</head>
+<body>
+<h1>100 Squares Arena</h1>
+<div class="sub">Two Copilot SDK agents play the puzzle on Microsoft Foundry models — live.</div>
+
+<div class="bar">
+  <label title="Chat model used by the first agent (Decision-1 is always the second agent)">LLM <select id="llm"><option>gpt-6-astra</option><option>gpt-6.1-sol</option><option>gpt-6-luna</option></select></label>
+  <label>Games per agent <input id="games" type="number" min="1" max="50" value="10"></label>
+  <label>Time limit / game (min) <input id="timeout" type="number" min="1" max="120" value="20"></label>
+  <label>Max tool calls / game <input id="maxcalls" type="number" min="100" max="100000" value="2000" style="width:90px"></label>
+  <label title="Concurrent: both agents play at the same time. Sequential: astra first, then Decision-1 (rules out shared-machine effects)">Agents <select id="seq"><option value="0">concurrently</option><option value="1">one after the other</option></select></label>
+  <button id="start">▶ Start batch</button>
+  <button id="stop" class="stop" disabled>■ Stop</button>
+  <span id="batchinfo">idle</span>
+</div>
+
+<div class="bar" id="optbar">
+  <label>Preset <select id="preset">
+    <option value="guided">Guided (default)</option><option value="no_strategy">No strategy text</option>
+    <option value="no_legal_filter">No legal-move filter</option><option value="raw">Raw (nothing pre-computed)</option>
+    <option value="custom">Custom</option></select></label>
+  <label title="Prompt describes Warnsdorff + backtracking (advice only)"><input type="checkbox" id="o-strategy" style="width:auto"> Strategy text</label>
+  <label title="Each candidate shows the number of onward moves of its square"><input type="checkbox" id="o-onward_counts" style="width:auto"> Onward counts</label>
+  <label title="Off: models see every empty square and may pick illegal moves"><input type="checkbox" id="o-legal_filter" style="width:auto"> Legal-move filter</label>
+  <label title="Harness plays steps that have a single option (needs the legal-move filter)"><input type="checkbox" id="o-auto_forced" style="width:auto"> Auto-play forced steps</label>
+  <label title="Moves that already led to a dead end are not offered again"><input type="checkbox" id="o-failed_memory" style="width:auto"> Failed-move memory</label>
+  <label title="Squares rejected as illegal from the current position are not offered again (needs the filter off)"><input type="checkbox" id="o-illegal_memory" style="width:auto"> Illegal-move memory</label>
+</div>
+
+<div class="arena" id="arena"></div>
+
+<h3>Results summary</h3>
+<div class="bar" style="margin-bottom:10px">
+  <label>Batch <select id="batchsel"></select></label>
+</div>
+<div id="batchopts" class="sub"></div>
+<table id="summary"></table>
+
+<h3>Game history</h3>
+<table id="history"></table>
+
+<script>
+const AGENTS = ['astra', 'decision'];
+const LABEL = { astra: 'gpt-6-astra', decision: 'Microsoft-Decision-1' };
+const setLabel = (k, l) => { LABEL[k] = l; const h = document.querySelector(`#p-${k} h2`); if (h) h.textContent = l; };
+let live = {}, results = [], batch = {}, totalGames = 10;
+const $ = id => document.getElementById(id);
+const emptyGrid = () => Array.from({ length: 10 }, () => Array(10).fill(0));
+
+function panelHtml(k) {
+  return `<div class="panel" id="p-${k}">
+    <div class="phead"><span class="dot ${k}"></span><h2>${LABEL[k]}</h2><span class="badge" id="b-${k}">idle</span>
+      <span class="gameno" id="g-${k}"></span></div>
+    <div class="board" id="board-${k}"></div>
+    <div class="progress"><i id="pr-${k}"></i></div>
+    <div class="stats">
+      <div class="stat"><b id="s-filled-${k}">0</b><span>filled</span></div>
+      <div class="stat"><b id="s-time-${k}">0:00</b><span>elapsed</span></div>
+      <div class="stat"><b id="s-calls-${k}">0</b><span>tool calls</span></div>
+      <div class="stat"><b id="s-undo-${k}">0</b><span>undos</span></div>
+      <div class="stat"><b id="s-ill-${k}">0</b><span>illegal</span></div>
+    </div>
+    <div class="msg" id="m-${k}"></div></div>`;
+}
+$('arena').innerHTML = AGENTS.map(panelHtml).join('');
+AGENTS.forEach(k => { $('board-' + k).innerHTML = '<div class="cell"></div>'.repeat(100); });
+
+const OPTS = ['strategy', 'onward_counts', 'legal_filter', 'auto_forced', 'failed_memory', 'illegal_memory'];
+const PRESETS = {
+  guided: { strategy: 1, onward_counts: 1, legal_filter: 1, auto_forced: 1, failed_memory: 1, illegal_memory: 0 },
+  no_strategy: { strategy: 0, onward_counts: 1, legal_filter: 1, auto_forced: 1, failed_memory: 1, illegal_memory: 0 },
+  no_legal_filter: { strategy: 1, onward_counts: 1, legal_filter: 0, auto_forced: 0, failed_memory: 1, illegal_memory: 0 },
+  raw: { strategy: 0, onward_counts: 0, legal_filter: 0, auto_forced: 0, failed_memory: 0, illegal_memory: 0 },
+};
+const OPT_LABEL = { strategy: 'strategy text', onward_counts: 'onward counts', legal_filter: 'legal filter', auto_forced: 'auto forced steps', failed_memory: 'failed-move memory', illegal_memory: 'illegal-move memory' };
+const readOpts = () => Object.fromEntries(OPTS.map(o => [o, $('o-' + o).checked]));
+function applyPreset(p) { OPTS.forEach(o => $('o-' + o).checked = !!PRESETS[p][o]); syncOpts(); }
+function syncOpts() {
+  const af = $('o-auto_forced'); if (!$('o-legal_filter').checked) af.checked = false;
+  af.disabled = !$('o-legal_filter').checked;
+  const im = $('o-illegal_memory'); if ($('o-legal_filter').checked) im.checked = false;
+  im.disabled = $('o-legal_filter').checked;
+  const cur = readOpts();
+  $('preset').value = Object.keys(PRESETS).find(p => OPTS.every(o => !!PRESETS[p][o] === cur[o])) || 'custom';
+}
+$('preset').onchange = e => { if (e.target.value !== 'custom') applyPreset(e.target.value); };
+OPTS.forEach(o => $('o-' + o).onchange = syncOpts);
+applyPreset('guided');
+const optSummary = o => {
+  if (!o) return 'n/a (older run)';
+  const parts = OPTS.filter(k => k !== 'illegal_memory' && !o[k]).map(k => 'no ' + OPT_LABEL[k]);
+  if (o.illegal_memory) parts.push('illegal-move memory');
+  return parts.join(', ') || 'guided (all helpers on)';
+};
+
+const fmt = s => { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+function render(k) {
+  const st = live[k]; if (!st) return;
+  const cells = $('board-' + k).children;
+  for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) {
+    const v = st.grid[r][c], el = cells[r * 10 + c];
+    el.textContent = v || '';
+    el.className = 'cell' + (v ? ' f' : '') + (st.last && st.last[0] === r && st.last[1] === c ? ' cur' : '');
+  }
+  const b = $('b-' + k); b.textContent = st.status.replace('_', ' '); b.className = 'badge ' + st.status;
+  $('g-' + k).textContent = st.game ? `game ${st.game}/${totalGames} · ${st.solved}/${st.completed} solved` : '';
+  $('s-filled-' + k).textContent = st.filled;
+  $('s-calls-' + k).textContent = st.tool_calls;
+  $('s-undo-' + k).textContent = st.undos;
+  $('s-ill-' + k).textContent = st.illegal;
+  $('pr-' + k).style.width = st.filled + '%';
+  $('m-' + k).textContent = st.message || '';
+}
+
+setInterval(() => {
+  for (const k of AGENTS) {
+    const st = live[k]; if (!st || st.status !== 'running' || !st.started_at) continue;
+    $('s-time-' + k).textContent = fmt(Date.now() / 1000 - st.started_at);
+  }
+}, 500);
+
+function setRunning(r) {
+  $('start').disabled = r; $('stop').disabled = !r; $('llm').disabled = r;
+  $('optbar').querySelectorAll('input,select').forEach(e => e.disabled = r || (e.id === 'o-auto_forced' && !$('o-legal_filter').checked) || (e.id === 'o-illegal_memory' && $('o-legal_filter').checked));
+  $('batchinfo').textContent = r ? `batch ${batch.id} running…` : (batch.id ? `last batch ${batch.id}` : 'idle');
+}
+
+function onEvent(ev) {
+  if (ev.type === 'snapshot') {
+    live = ev.live; batch = ev.batch;
+    AGENTS.forEach(k => live[k] && setLabel(k, live[k].label));
+    if (batch.config) totalGames = batch.config.games;
+    AGENTS.forEach(render); setRunning(batch.running); return;
+  }
+  if (ev.type === 'batch_start') {
+    batch = { id: ev.batch_id, running: true, config: ev.config }; totalGames = ev.config.games;
+    if (ev.config.llm) setLabel('astra', ev.config.llm);
+    AGENTS.forEach(k => Object.assign(live[k], { grid: emptyGrid(), status: 'idle', filled: 0, completed: 0, solved: 0, game: 0, tool_calls: 0, undos: 0, illegal: 0, last: null, message: null }));
+    AGENTS.forEach(render); setRunning(true); return;
+  }
+  if (ev.type === 'batch_end') { batch.running = false; setRunning(false); loadResults(); return; }
+  const st = live[ev.agent]; if (!st) return;
+  if (ev.type === 'game_start') Object.assign(st, { grid: emptyGrid(), game: ev.game, status: 'running', started_at: ev.started_at, last: null, message: null, filled: 0, tool_calls: 0, undos: 0, illegal: 0 });
+  else if (ev.type === 'move') { st.grid[ev.r][ev.c] = ev.n; st.last = [ev.r, ev.c]; }
+  else if (ev.type === 'undo') { st.grid[ev.r][ev.c] = 0; st.last = null; }
+  else if (ev.type === 'illegal') st.message = ev.message;
+  else if (ev.type === 'game_end') {
+    st.status = ev.result.status; st.completed++; st.solved += ev.result.solved ? 1 : 0;
+    $('s-time-' + ev.agent).textContent = fmt(ev.result.duration_s); loadResults();
+  } else if (ev.type === 'agent_error') { st.status = 'error'; st.message = ev.message; }
+  for (const k of ['filled', 'illegal', 'undos', 'tool_calls']) if (k in ev) st[k] = ev[k];
+  render(ev.agent);
+}
+
+function connect() {
+  const es = new EventSource('/events');
+  es.onmessage = m => onEvent(JSON.parse(m.data));
+  es.onerror = () => { es.close(); setTimeout(connect, 2000); };
+}
+
+const med = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const t = v => v == null ? '–' : fmt(v);
+
+async function loadResults() {
+  results = await (await fetch('/api/results')).json();
+  const batches = [...new Set(results.map(r => r.batch_id))].reverse();
+  const sel = $('batchsel'), cur = sel.value;
+  sel.innerHTML = '<option value="">All runs</option>' + batches.map(b => `<option>${b}</option>`).join('');
+  sel.value = batches.includes(cur) ? cur : (batch.id && batches.includes(batch.id) ? batch.id : '');
+  renderResults();
+}
+
+function renderResults() {
+  const b = $('batchsel').value, rows = results.filter(r => !b || r.batch_id === b);
+  let h = '<tr><th>Agent</th><th>Games</th><th>Solved</th><th>Success</th><th>Median solve</th><th>Mean solve</th><th>Fastest</th><th>Slowest</th><th>Avg. best fill</th><th>Avg. tool calls</th><th>Avg. decision latency</th></tr>';
+  const groups = [...new Map(rows.map(r => [r.label, r.agent])).entries()].sort((a, b) => (a[1] === 'decision') - (b[1] === 'decision'));
+  if (!groups.length) AGENTS.forEach(k => groups.push([LABEL[k], k]));
+  for (const [label, k] of groups) {
+    const rs = rows.filter(r => r.label === label), sv = rs.filter(r => r.solved).map(r => r.duration_s);
+    h += `<tr><td><span class="dot ${k}"></span>${label}</td><td>${rs.length}</td><td>${sv.length}</td>
+      <td>${rs.length ? Math.round(100 * sv.length / rs.length) + '%' : '–'}</td><td>${t(med(sv))}</td><td>${t(avg(sv))}</td>
+      <td>${sv.length ? t(Math.min(...sv)) : '–'}</td><td>${sv.length ? t(Math.max(...sv)) : '–'}</td>
+      <td>${rs.length ? avg(rs.map(r => r.max_filled)).toFixed(1) : '–'}</td><td>${rs.length ? Math.round(avg(rs.map(r => r.tool_calls))) : '–'}</td>
+      <td>${rs.length ? ((avg(rs.map(r => r.avg_decision_ms || 0)) / 1000).toFixed(2) + ' s') : '–'}</td></tr>`;
+  }
+  $('summary').innerHTML = h;
+  const withOpts = rows.find(r => r.options);
+  $('batchopts').textContent = 'Options: ' + (b ? optSummary(withOpts && withOpts.options) : 'select a batch to see its options');
+  const maxT = Math.max(1, ...rows.map(r => r.duration_s));
+  $('history').innerHTML = '<tr><th>Agent</th><th>Batch</th><th>Game</th><th>Status</th><th>Time</th><th>Best fill</th><th>Tool calls</th><th>Avg. decision</th><th>Undos</th><th>Illegal</th><th>Options</th><th>Tokens in/out</th></tr>' +
+    [...rows].reverse().map(r => `<tr><td><span class="dot ${r.agent}"></span>${r.label}</td><td>${r.batch_id}</td><td>${r.game}</td>
+      <td>${r.solved ? '✅ solved' : r.status}</td><td>${fmt(r.duration_s)}<span class="tb ${r.solved ? 'ok' : ''}" style="width:${Math.max(2, 100 * r.duration_s / maxT)}px"></span></td>
+      <td>${r.max_filled}</td><td>${r.tool_calls}</td><td>${r.avg_decision_ms != null ? (r.avg_decision_ms / 1000).toFixed(2) + ' s' : '–'}</td><td>${r.undos}</td><td>${r.illegal_moves}</td><td style="font-size:.75rem;color:var(--mut)">${optSummary(r.options)}</td>
+      <td>${(r.input_tokens || 0).toLocaleString()} / ${(r.output_tokens || 0).toLocaleString()}</td></tr>`).join('');
+}
+
+$('batchsel').onchange = renderResults;
+$('start').onclick = async () => {
+  const body = { games: +$('games').value, timeout_s: +$('timeout').value * 60, max_tool_calls: +$('maxcalls').value, options: readOpts(), sequential: $('seq').value === '1', llm: $('llm').value };
+  const r = await fetch('/api/start', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+  if (!r.ok) alert((await r.json()).error);
+};
+$('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
+
+connect(); loadResults();
+</script>
+</body>
+</html>

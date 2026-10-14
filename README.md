@@ -325,6 +325,16 @@ sequenceDiagram
     W2-->>UI: start, step, step, ... done (wall_ms)
 ```
 
+## Puzzle arena
+
+`puzzle_arena/` is a separate uv project (own `pyproject.toml` and `uv.lock`, because it needs the GitHub Copilot SDK). It lets an LLM (`gpt-6-astra`, `gpt-6.1-sol` or `gpt-6-luna`) and Decision-1 play the same 100-squares puzzle inside the same Copilot SDK agent loop, with a live dashboard and per-batch options that remove harness help (legal-move filter, strategy text, memories). It reads the Foundry resource from `AZURE_ENDPOINT` in the same git-ignored `.env` as the rest of this repo.
+
+```bash
+cd puzzle_arena && ./run.sh      # http://127.0.0.1:8765
+```
+
+See [`puzzle_arena/README.md`](puzzle_arena/README.md).
+
 ## How the comparison is kept fair
 
 Early versions of the demo made Decision-1 look much slower than it is, purely because of how the client code was written. Measured on this setup, before the fixes:
@@ -366,6 +376,7 @@ agent_demo/               live agent-loop comparison
   tools.py                9 mock tools with canned results
   pricing.json            USD per 1M tokens (fill in)
   static/index.html       the UI
+puzzle_arena/             LLM vs Decision-1 on the 100-squares puzzle (own uv project, see its README)
 docs/images/              screenshots and GIF used in this README
 docs/record_gif.py        regenerates the demo GIF
 ```

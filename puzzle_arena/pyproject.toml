@@ -1,0 +1,15 @@
+[project]
+name = "puzzle-arena"
+version = "0.1.0"
+description = "Benchmark of an LLM against Microsoft-Decision-1 on the 100-squares puzzle, built on the GitHub Copilot SDK"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9",
+    "azure-identity",
+    "github-copilot-sdk==1.0.16",
+    "pydantic>=2.11",
+    "python-dotenv",
+]
+
+[tool.uv]
+package = false
